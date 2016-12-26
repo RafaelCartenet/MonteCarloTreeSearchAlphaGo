@@ -55,6 +55,8 @@ class State(object):
         return None
 
     def evaluate(self):
+    # I guess this function is about sampling some possible actions, a finite number of them,
+    # and evaluate them using rollout and value net. (That should use the function edge.evaluate())
         # ------ TO COMPLETE ------- #
         # -------------------------- #
         # -------------------------- #
