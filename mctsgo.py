@@ -46,16 +46,23 @@ class State(object):
     def expand(self):
     # expand a new node if the Ntrh (threshold is over nthr (40 in AlphaGo))
     # expansion is explained in lecture 22 page 13. Not really clear ...
-    # add
+    # add the edges of the often (more than a threshold value) visited node to the search tree
+        for i in edges:
+            if i.Nr > i.nthr:
+                # add the edges of the state the edge points to, by this we have effectively added the node 
+                # i.state  = state to add to the search tree, edge to that state exists already
+                i.state.edges.append(Edge() ) #append the edges of the newly added node to enlarge search tree
+                # TODO where do we get the edges from, update_u_edges???
+
         # ------ TO COMPLETE ------- #
         # -------------------------- #
         # -------------------------- #
-        # -------------------------- #
-        # -------------------------- #
+        # ------DONE??-------------- #
+        # --break after first edge?- #
         # -------------------------- #
         return None
 
-    def evaluate(self):
+    def evaluate(self, starting_Node):
     # I guess this function is about sampling some possible actions, a finite number of them,
     # and evaluate them using rollout and value net. (That should use the function edge.evaluate())
         # ------ TO COMPLETE ------- #
@@ -65,8 +72,18 @@ class State(object):
         # -------------------------- #
         # -------------------------- #
 
-    def rollout(self): # Rollout policy in order to determine a reward 1 0 or -1
+    def rollout(self, starting_Node): # Rollout policy in order to determine a reward 1 0 or -1
     # according to the result of the game. policy = plays random move until the end.
+    # use structure from go_train_value to get the fully random game evaluation
+    #game = game1()
+        r_all = np.ones((n_train)) # random moves for all games
+            [d1, w1, wp1, d2, w2, wp2] = game.play_games([], [],\
+                    r_all, [], [], r_all, n_train, nargout = 6)
+        #   w_black: nb1*1, 0: tie, 1: black wins, 2: white wins
+        #   wp_black: win probabilities for black
+        #   d_white: 4-d matrix of size nx*ny*3*nb2 containing all moves by white
+        #   w_white: nb2*1, 0: tie, 1: black wins, 2: white wins
+        #   wp_white: win probabilities for white
         # ------ TO COMPLETE ------- #
         # -------------------------- #
         # -------------------------- #
@@ -77,6 +94,8 @@ class State(object):
 
     def valuenetwork(self): # uses the VAL function that uses the Value network
     # to predict win value.
+    # SHOULD BE CALLED ONLY ONCE PER NODE (if not saving the result might be good)
+    # use the value function of strategy.py ?
         # ------ TO COMPLETE ------- #
         # -------------------------- #
         # -------------------------- #
@@ -120,6 +139,7 @@ class Edge:
                         # - SL policy network   P_delta(a|s) <- AlphaGo
                         # - RL policy network   P_rau(a|s)
 
+
     def update_Q(self):
         qV = self.Wv / self.Nv
         qR = self.Wr / self.Nr
@@ -138,19 +158,25 @@ class Edge:
     # -------------- #
 
     # executes the steps needed in the backprop algorithm
-    #TODO do we reinitialise the values of Nv and Wv
-    def backprop_update(self):
+    # do we reinitialise the values of Nv and Wv -> no, the leaf Node will automatically be initialised by the EVALUATE step
+    def backprop_update(self,nodePrevious):
         
-        #zt = 1 # random value chosen, since no parallel processing in order
         #no parallel processing -> commented out
-        #self.Nr = self.Nr + 1 # virtual loss applied to discourage evaluation by paralle threads
-        #self.Wr = self.Wr + zt # virtual loss applied to discourage evaluation by paralle threads
-        self.update_Q()
+        #zt = 1 # random value chosen, since no parallel processing in order
+        #self.Nr = self.Nr + 1 # virtual loss applied to discourage evaluation by parallel threads
+        #self.Wr = self.Wr + zt # virtual loss applied to discourage evaluation by parallel threads
+        
         self.Nv = self.Nv + 1
-        self.Wv = self.Wv + self.valuenetwork() # add the value network estimate
-    def backprop_leaf(self):
-        self.Q = 0
-        self.Wv = 0
+        if nodePrevious.isLeaf(): # we only have to evaluate the winning probabilities for the new leaf node, the rest is propagated
+            self.Wv = self.Wv + nodePrevious.valuenetwork() # add the value network estimate of the new leaf Node
+        else:
+            self.Wv = self.Wv + nodePrevious.Wv
+            
+        self.update_Q()
+
+    def getBackpropVal(self):
+        return [Q,Nv,Wv]
+        
 
 
     # evaluate this action
@@ -158,19 +184,28 @@ class Edge:
     # - Value Network Estimate : v
     # - Rollout policy (random play until end of the game) with reward : r
     def evaluate(self):
-        self.Nv += 1
-        self.Nr += 1
-
+        self.Nv += 1 
+        self.Nr += 1 
         # ------ TO COMPLETE ------- #
-        self.Nv += self.valuenetwork() # ESTIMATION THANKS TO VALUE NETWORK.
-        self.Nr += self.rollout() # ESTIMATION THANKS TO ROLLOUT POLICY
+        self.Wv += self.valuenetwork() # ESTIMATION FROM THE VALUE NETWORK (current Node is the starting point)
+        self.Wr += self.rollout() # ESTIMATION FROM THE ROLLOUT POLICY (current Node is the starting point)
         # -------------------------- #
+        
+        #TODO update the result of the evaluation for the updating of the tree in the backprop
+        # -> did the change to Wv and Wr do this?
+
 
 
 class MCTree:
     def __init__(self, board):
-        self.starting_Node = State(board)
-
+        self.starting_Node = State(board)# starting_Node is the tree head 
+        
+        # path holds all the information needed for the backpropagation
+        # add availability of setting the values calculated in backprop (needs to be able to pass the values up the tree!!!!)
+        
+        
+        # path only contains only the selected path in one selection step -> board state at the end of the path end
+    # select one path from rootNode until a leaf node of the newly constructed monteCarloTree
     def selection(self, path = [], node = None):
         if node == None:
             node = self.starting_Node
@@ -180,24 +215,24 @@ class MCTree:
             return self.selection(path, nextt.state)
         return path, node
 
-    # Adds an aditionnal node from the selected node
+    # Adds an aditional node C from the selected node
     def expansion(self, node):
-        return node.expand()
+        # add Node to MCTree if a certain number of visits to an !EDGE! is reached
+        result = node.expand()
+        
+        return
 
-    # Simulates the end of the game and computes the result
+    # Simulates from the Node C which was !EXPANDED! until the end of the game and computes the result
     def simulation(self, node):
         return node.evaluate()
 
-    # change the played / won value for every node in the path, according to the result
-    def backprop(self, path, result, node = None):
-        #if node == None: node = self.starting_Node
-        #if not node.is_leaf():
-
-        for i in reverse(path):
-            if i == path[-1]:
-                i.backprop_leaf()
-            i.backprop_update()
-
+    # change the played / won value for every node in the path from C to the root, according to the result
+    def backprop(self, path):
+        previous = len(path) - 1
+        for i in reversed(range(len(path))):
+            # values in the leaf node already initialised 
+            path[i].backprop_update(path[previous])
+            previous = i
 
 
     def MCTS(self):
@@ -210,8 +245,8 @@ class MCTree:
         # Add the created node in the path
         path.append(0)
 
-        # Simulate the game and returns the result.
-        result = self.simulation(node)
+        # Simulate the game until the end
+        self.simulation(node)
 
         # Backpropagate the result of the simulation in the three through the path
-        self.backprop(path, result)
+        self.backprop(path)
