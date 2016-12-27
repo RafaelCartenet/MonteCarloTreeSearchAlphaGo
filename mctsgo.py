@@ -46,6 +46,7 @@ class State(object):
     def expand(self):
     # expand a new node if the Ntrh (threshold is over nthr (40 in AlphaGo))
     # expansion is explained in lecture 22 page 13. Not really clear ...
+    # add
         # ------ TO COMPLETE ------- #
         # -------------------------- #
         # -------------------------- #
@@ -132,10 +133,25 @@ class Edge:
     def PUCT(self):
         return self.Q + self.u
 
-
     # -------------- #
     # MCTS FUNCTIONS
     # -------------- #
+
+    # executes the steps needed in the backprop algorithm
+    #TODO do we reinitialise the values of Nv and Wv
+    def backprop_update(self):
+        
+        #zt = 1 # random value chosen, since no parallel processing in order
+        #no parallel processing -> commented out
+        #self.Nr = self.Nr + 1 # virtual loss applied to discourage evaluation by paralle threads
+        #self.Wr = self.Wr + zt # virtual loss applied to discourage evaluation by paralle threads
+        self.update_Q()
+        self.Nv = self.Nv + 1
+        self.Wv = self.Wv + self.valuenetwork() # add the value network estimate
+    def backprop_leaf(self):
+        self.Q = 0
+        self.Wv = 0
+
 
     # evaluate this action
     # evaluation takes in consideration two things :
@@ -177,13 +193,11 @@ class MCTree:
         #if node == None: node = self.starting_Node
         #if not node.is_leaf():
 
-        # I didn't really understand how they do it.
-        # ------ TO COMPLETE ------- #
-        # -------------------------- #
-        # -------------------------- #
-        # -------------------------- #
-        # -------------------------- #
-        # -------------------------- #
+        for i in reverse(path):
+            if i == path[-1]:
+                i.backprop_leaf()
+            i.backprop_update()
+
 
 
     def MCTS(self):
