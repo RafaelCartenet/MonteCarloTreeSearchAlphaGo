@@ -1,5 +1,6 @@
 import numpy as np
 import tensorflow as tf
+import strategy
 
 nx = 5
 ny = 5
@@ -8,9 +9,13 @@ ny = 5
 # contains the board of the current State and a list of edges that lead to the
 # next states.
 class State(object):
-    def __init__(self, board, player):
+    def __init__(self, board, state, player):
         # Board
         self.board = board
+        if state == None:
+            state = -np.ones([2,1])
+        else:
+            self.state = state
 
         # Actions
         self.edges = [] # List of Edge
@@ -78,8 +83,8 @@ class State(object):
         # initialize new board
         new_board = np.zeros(self.board.shape)
         new_board[:, :] = board[:, :]
-        new_state = np.zeros(state.shape)
-        new_state[:] = state[:]
+        new_state = np.zeros(self.state.shape)
+        new_state[:] = self.state[:]
 
         # choose best move according to result of policy network
         temp_softout = softout[:]/np.sum(softout[:])
@@ -112,8 +117,8 @@ class State(object):
                 self.valid(b[:, :], state[:], -np.ones((1, 2)), self.player)
             new_state[:] = sn
 
-        # SHOULD TRANSFORM BOARD AND STATE INTO A NEW STATE.
-        return STATE
+        #TODO is a new class instance needed every time?
+        return STATE(new_board,new_state,3-self.player)
 
 
     def rollout(self): # Rollout policy in order to determine a reward 1 0 or -1
@@ -127,6 +132,104 @@ class State(object):
         #   d_white: 4-d matrix of size nx*ny*3*nb2 containing all moves by white
         #   w_white: nb2*1, 0: tie, 1: black wins, 2: white wins
         #   wp_white: win probabilities for white
+        
+        
+        # board state cannot be passed along
+        # calculate remaining steps on the board and then just run it
+        #b board
+        # state = state? which player played where??? initialised to all -1
+        # 2x1 vector where each vector is reserverd for one player and saves the position of the moves
+        
+        if self.player == 1:
+            k = self.state.count(1)
+            b, state, n_valid_moves, wp_max, _, x_pos, y_pos =\
+                strategy.val(self.board, self.state, 1, [], 1, self.player, k)
+        else:
+            k = self.state.count(2)
+            b, state, n_valid_moves, wp_max, _, x_pos, y_pos =\
+                strategy.val(self.board, self.state, 1, [], 1, self.player, k)
+        # k = number of moves, check in one of the states , how many elements are != -1
+
+        while n_valid_moves > 0:
+            np0 = n_valid_moves
+            k = k + 1
+            # 'm' possible board configurations
+            m = np0
+            d = np.zeros((nx, ny, 3, m))
+            pos = np.zeros((nx,ny,m))
+            
+            # Check whether tie(0)/black win(1)/white win(2) in all board configurations
+            w = np.zeros((m))
+
+            # winning probability: (no work for 1st generation)       
+            wp = np.zeros((m))
+
+            # Check whether the configurations are valid for training
+            valid_data = np.zeros((m))
+
+            # Check whether the configurations are played by player 1 or player 2
+            turn = np.zeros((m))
+
+            # number of valid moves in previous time step
+            vm0 = np.ones((1))
+
+            # maximum winning probability for each game
+            wp_max = np.zeros((1))
+
+            # For each time step, check whether game is in progress or not.
+            game_in_progress = np.ones((1))
+
+            # First player: player 1 (black)
+            p = 1
+
+            for k in range(np0):
+                if p == 1:
+                            b, state, n_valid_moves, wp_max, _, x_pos, y_pos =\
+                                strategy.val(b, state, game_in_progress, netV1, r1, p, k)
+                else:
+
+                            b, state, n_valid_moves, wp_max, _, x_pos, y_pos =\
+                                strategy.val(b, state, game_in_progress, netV2, r2, p, k)
+                        
+
+                w0, end_game, _, _ = strategy.winner(b, state)
+                idx = nrange(k , (k + 1) )
+                d[:, :, 0, idx] = (b == 1)
+                d[:, :, 1, idx] = (b == 2)
+                d[:, :, 2, idx] = (b == 0)
+                
+                wp[idx] = wp_max
+                valid_data[idx] = game_in_progress * (n_valid_moves > 0)
+                
+                # information about who's the current player
+                turn[idx] = p
+                if k>0:
+                    for i in range(1):
+                        if x_pos[i] >= 0:
+                            pos[int(x_pos[i]),int(y_pos[i]),(k-1)+i] = 1
+                
+                game_in_progress *=\
+                        ((n_valid_moves > 0) * (end_game == 0) +\
+                        ((vm0 + n_valid_moves) > 0) * (end_game == -1))
+
+
+                if game_in_progress == 0:
+                    break
+
+                p = 3 - p
+                vm0 = n_valid_moves[:]
+
+            for k in range(np0):
+                idx = nrange(k, (k + 1))
+                w[idx] = w0[:] # final winner
+
+            # player 1's stat
+            win = np.sum(w0 == 1) / float(1)
+            loss = np.sum(w0 == 2) / float(1)
+            tie = np.sum(w0 == 0) / float(1)
+
+        
+        #TODO what do we return here, the biggest possibility of win, loss, tie?????
         return 0 # 1 0 or -1
 
     def valuenetwork(self): # uses the VAL function that uses the Value network
@@ -163,7 +266,7 @@ class Edge:
     self.nthr = 40 # visit threshold
 
     def __init__(self, board):
-        self.state = State(board) # Board
+        #self.state = State(board) # Board
         self.player = None # Player performing action
 
         self.priorP = None # Prior probability for that edge
@@ -251,8 +354,8 @@ class Edge:
 
 
 class MCTree:
-    def __init__(self, board):
-        self.starting_Node = State(board)# starting_Node is the tree head
+    def __init__(self, board, state):
+        self.starting_Node = State(board, state)# starting_Node is the tree head
 
         # path holds all the information needed for the backpropagation
         # add availability of setting the values calculated in backprop (needs to be able to pass the values up the tree!!!!)
@@ -296,7 +399,7 @@ class MCTree:
         node = self.expansion(node)
 
         # Add the created node in the path
-        path.append(0)
+        path.append(node)
 
         # Simulate the game until the end
         self.simulation(node)
