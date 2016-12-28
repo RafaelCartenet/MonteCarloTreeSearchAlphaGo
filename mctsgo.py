@@ -17,12 +17,27 @@ class State(object):
         else:
             self.state = state
 
-        # Actions
-        self.edges = [] # List of Edge
-        self.nbedges = 0
-
         # Player turn
         self.player = player # equals 1 if black. 2 if white
+
+        # Actions
+        self.edges = [] # List of Edge
+        
+        #initialise edges, otherwise no function
+        free_places = nx * ny - self.state.count(1) - self.state.count(2)
+        for p1 in range(free_places):
+            vm1, b1, state1 = next_move.valid(self.board, self.state, next_move.xy(p1), self.player)
+            n_valid_moves += vm1
+            valid_moves[:, p1] = vm1
+            # check only the next move
+            idx = nrange(1) + p1 
+            d[:, :, 0, idx] = (b1 == 1)
+            d[:, :, 1, idx] = (b1 == 2)
+            d[:, :, 2, idx] = (b1 == 0)
+            # TODO what do we do with the boards, create Edges with them, (need the state variable for this?
+        self.nbedges = 0
+
+
 
         # Value Network ESTIMATION
         self.ValNetOutput = None # equals to None when not estimated yet.
@@ -254,10 +269,10 @@ class Edge:
     # GLOBAL VARIABLES
     self.lbda = 0.5
     self.cpuct = 5
-    self.nthr = 40 # visit threshold
+    self.nthr = 10 # visit threshold, AlphaGo had 40 here use lower number (10 is arbitrary)
 
     def __init__(self, board):
-        #self.state = State(board) # Board
+        self.board = board # Board TODO has to save a State call instance
         self.player = None # Player performing action
 
         self.priorP = None # Prior probability for that edge
@@ -294,7 +309,7 @@ class Edge:
         denom = 1 + self.Nr
         self.u = self.cpuct * self.P * num / denom
 
-    def PUCT(self, board):
+    def PUCT(self):
         return self.Q + self.u
 
     # executes a rough prediction of this action.
@@ -335,10 +350,10 @@ class Edge:
         self.Nv += 1
         self.Nr += 1
         # ------ TO COMPLETE ------- #
-        self.Wv += self.valuenetwork() # ESTIMATION FROM THE VALUE NETWORK (current Node is the starting point)
-        self.Wr += self.rollout() # ESTIMATION FROM THE ROLLOUT POLICY (current Node is the starting point)
+        self.Wv += board.valuenetwork() # ESTIMATION FROM THE VALUE NETWORK (current Node is the starting point)
+        self.Wr += board.rollout() # ESTIMATION FROM THE ROLLOUT POLICY (current Node is the starting point)
         # -------------------------- #
-
+        return 1
         #TODO update the result of the evaluation for the updating of the tree in the backprop
         # -> did the change to Wv and Wr do this?
 
@@ -348,30 +363,28 @@ class MCTree:
     def __init__(self, board, state):
         self.starting_Node = State(board, state)# starting_Node is the tree head
 
-        # path holds all the information needed for the backpropagation
-        # add availability of setting the values calculated in backprop (needs to be able to pass the values up the tree!!!!)
 
-
-    # path contains only the selected path in one selection step -> board state at the end of the path end
     # select one path from rootNode until a leaf node of the newly constructed monteCarloTree
     def selection(self, path = [], node = None):
         if node == None:
             node = self.starting_Node
         if not node.is_leaf():
             nextt = node.choose_action() # CHOOSE NEXT EDGE ACCORDING TO POLICY
-            path.append(nextt.state) # Adds the state to the path.
-            return self.selection(path, nextt.state)
+            path.append(nextt.board) # Adds the state to the path.
+            return self.selection(path, nextt.board)
         return path, node
 
     # Adds an aditional node C from the selected node
     def expansion(self, node):
         # add Node to MCTree if a certain number of visits to an !EDGE! is reached
+        # TODO node is selected and a new State instance is created, inserted into the tree??
         result = node.expand()
-        return
+        return result
 
     # Simulates from the Node C which was !EXPANDED! until the end of the game and computes the result
     def simulation(self, node):
-        return node.evaluate()
+        node.evaluate() # no return, since function updates the tree by itself
+        return 1
 
     # change the played / won value for every node in the path from C to the root, according to the result
     def backprop(self, path):
@@ -380,7 +393,6 @@ class MCTree:
             # values in the leaf node already initialised
             path[i].backprop_update(path[previous])
             previous = i
-
 
     def MCTS(self):
         # Selects a leaf and returns the path from the root to node.
