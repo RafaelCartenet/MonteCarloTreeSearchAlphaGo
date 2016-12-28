@@ -123,19 +123,7 @@ class State(object):
 
     def rollout(self): # Rollout policy in order to determine a reward 1 0 or -1
     # according to the result of the game. policy = plays random move until the end.
-    # use structure from go_train_value to get the fully random game evaluation
-    #game = game1()
-        # r_all = np.ones((n_train)) # random moves for all games
-        # [d1, w1, wp1, d2, w2, wp2] = game.play_games([], [], r_all, [], [], r_all, n_train, nargout = 6)
-        #   w_black: nb1*1, 0: tie, 1: black wins, 2: white wins
-        #   wp_black: win probabilities for black
-        #   d_white: 4-d matrix of size nx*ny*3*nb2 containing all moves by white
-        #   w_white: nb2*1, 0: tie, 1: black wins, 2: white wins
-        #   wp_white: win probabilities for white
         
-        
-        # board state cannot be passed along
-        # calculate remaining steps on the board and then just run it
         #b board
         # state = state? which player played where??? initialised to all -1
         # 2x1 vector where each vector is reserverd for one player and saves the position of the moves
@@ -184,14 +172,12 @@ class State(object):
 
             for k in range(np0):
                 if p == 1:
-                            b, state, n_valid_moves, wp_max, _, x_pos, y_pos =\
-                                strategy.val(b, state, game_in_progress, netV1, r1, p, k)
+                    b, state, n_valid_moves, wp_max, _, x_pos, y_pos =\
+                        strategy.val(b, state, game_in_progress, netV1, r1, p, k)
                 else:
-
-                            b, state, n_valid_moves, wp_max, _, x_pos, y_pos =\
-                                strategy.val(b, state, game_in_progress, netV2, r2, p, k)
-                        
-
+                    b, state, n_valid_moves, wp_max, _, x_pos, y_pos =\
+                        strategy.val(b, state, game_in_progress, netV2, r2, p, k)
+                
                 w0, end_game, _, _ = strategy.winner(b, state)
                 idx = nrange(k , (k + 1) )
                 d[:, :, 0, idx] = (b == 1)
@@ -203,11 +189,11 @@ class State(object):
                 
                 # information about who's the current player
                 turn[idx] = p
-                if k>0:
+                if k > 0:
                     for i in range(1):
                         if x_pos[i] >= 0:
                             pos[int(x_pos[i]),int(y_pos[i]),(k-1)+i] = 1
-                
+    
                 game_in_progress *=\
                         ((n_valid_moves > 0) * (end_game == 0) +\
                         ((vm0 + n_valid_moves) > 0) * (end_game == -1))
@@ -219,18 +205,23 @@ class State(object):
                 p = 3 - p
                 vm0 = n_valid_moves[:]
 
-            for k in range(np0):
-                idx = nrange(k, (k + 1))
-                w[idx] = w0[:] # final winner
+        for k in range(np0):
+            idx = nrange(k, (k + 1))
+            w[idx] = w0[:] # final winner
 
-            # player 1's stat
-            win = np.sum(w0 == 1) / float(1)
-            loss = np.sum(w0 == 2) / float(1)
-            tie = np.sum(w0 == 0) / float(1)
-
+        # player 1's stat
+        win = np.sum(w0 == 1) / float(1)
+        loss = np.sum(w0 == 2) / float(1)
+        tie = np.sum(w0 == 0) / float(1)
         
-        #TODO what do we return here, the biggest possibility of win, loss, tie?????
-        return 0 # 1 0 or -1
+        if win > loss and win > tie:
+            return 1
+        elif tie > win and tie > loss:
+            return 0
+        elif loss > win and loss > tie:
+            return -1
+        
+        #TODO is this the correct assignment??????
 
     def valuenetwork(self): # uses the VAL function that uses the Value network
     # to predict win value.
